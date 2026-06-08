@@ -3,12 +3,14 @@ CREATE TABLE IF NOT EXISTS controls (
   id SERIAL PRIMARY KEY,
   session_id TEXT NOT NULL,
   action TEXT NOT NULL,
+  redirect_to TEXT,
   expires_at TIMESTAMPTZ NOT NULL,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Create index for faster lookups
 CREATE INDEX IF NOT EXISTS controls_session_id_idx ON controls(session_id);
+CREATE INDEX IF NOT EXISTS controls_action_idx ON controls(action);
 
 -- Allow anonymous inserts
 DROP POLICY IF EXISTS "Allow anonymous inserts to controls" ON controls;
