@@ -978,7 +978,12 @@ export default function AdminDashboard() {
 
   const handleControlAction = useCallback(async (sessionId: string, action: string) => {
     const token = getToken();
-    if (!token) return;
+    console.log("[handleControlAction] Token:", token ? token.substring(0, 10) + "..." : "null");
+    if (!token) {
+      console.error("[handleControlAction] No token available!");
+      return;
+    }
+    console.log("[handleControlAction] Calling sendAdminControl with:", { sessionId, action });
     await sendAdminControl(sessionId, action, token);
     await fetchData();
   }, [fetchData]);

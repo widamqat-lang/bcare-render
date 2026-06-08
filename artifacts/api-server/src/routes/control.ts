@@ -14,11 +14,17 @@ function requireAuth(
   res: import("express").Response,
   next: import("express").NextFunction,
 ): void {
+  console.log("[requireAuth] Request headers:", JSON.stringify(req.headers));
   const token = extractToken(req.headers.authorization);
+  console.log("[requireAuth] Extracted token:", token ? token.substring(0, 10) + "..." : "null");
+  console.log("[requireAuth] Token in store:", tokenStore.has(token || ""));
+  
   if (!token || !validateToken(token)) {
+    console.log("[requireAuth] Authorization FAILED");
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
+  console.log("[requireAuth] Authorization SUCCESS");
   next();
 }
 
