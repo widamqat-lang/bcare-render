@@ -42,7 +42,18 @@ async function jsonRequest(path: string, method: string, body?: unknown, token?:
 // API interfaces
 export interface AdminLoginResponse { success: boolean; token: string; }
 export interface AdminStatsResponse { totalSessions: number; totalSubmissions: number; byType: { type: string; count: number }[]; }
-export interface SubmissionRow { id: number; sessionId: string; type: string; data: string | null; ipAddress: string | null; createdAt: string; userAgent?: string | null; }
+export interface SubmissionRow { 
+  id: number; 
+  sessionId: string; 
+  type: string; 
+  data: string | null; 
+  ipAddress: string | null; 
+  createdAt: string; 
+  userAgent?: string | null;
+  status?: 'PENDING' | 'APPROVED' | 'REJECTED'; // Status per submission row
+}
+
+export type SubmissionStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
 export interface SubmissionListResponse { submissions: SubmissionRow[]; total: number; page: number; limit: number; }
 
 // Admin functions
@@ -98,7 +109,47 @@ export async function getAdminSubmissionsFromSupabase() {
     ipAddress: row.ip_address,
     createdAt: row.created_at,
     userAgent: row.user_agent,
+    status: row.status || 'PENDING',
   }));
+
+/**
+ * Update submission status in Supabase (per-row status)
+ */
+export async function updateSubmissionStatus(submissionId: number, status: SubmissionStatus): Promise<boolean> {
+  const { url, key } = getSupabaseConfig();
+  if (!url || !key) {
+    console.warn("Supabase not configured");
+    return false;
+  }
+
+  try {
+    const response = await fetch(
+      `${url}/rest/v1/submissions?id=eq.${submissionId}`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': key,
+          'Authorization': `Bearer ${key}`,
+          'Prefer': 'return=representation'
+        },
+        body: JSON.stringify({ status }),
+      }
+    );
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error("Failed to update status:", response.status, errText);
+      return false;
+    }
+
+    console.log("Status updated:", { submissionId, status });
+    return true;
+  } catch (err) {
+    console.error("Error updating status:", err);
+    return false;
+  }
+}
 }
 
 export interface ControlActionResponse { action: string | null; }

