@@ -94,8 +94,39 @@ export async function getAllAdminSubmissions(token: string) {
 export async function getAdminSubmissionsFromSupabase() {
   const { url, key } = getSupabaseConfig();
   if (!url || !key) throw new Error("Supabase not configured");
-  
-  const response = await fetch(`${url}/rest/v1/submissions?select=*&order=created_at.desc`, {
+
+  const queryUrl = `${url}/rest/v1/submissions?select=*&order=created_at.desc&limit=100`;
+  console.log("[getAdminSubmissionsFromSupabase] Fetching:", queryUrl);
+
+  const response = await fetch(queryUrl, {
+    headers: { "apikey": key, "Authorization": `Bearer ${key}` },
+  });
+
+  console.log("[getAdminSubmissionsFromSupabase] Status:", response.status);
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error("[getAdminSubmissionsFromSupabase] Error:", response.status, errorText);
+    throw new Error(`HTTP ${response.status}`);
+  }
+
+  const data = await response.json();
+  console.log("[getAdminSubmissionsFromSupabase] Rows received:", Array.isArray(data) ? data.length : 0);
+  if (Array.isArray(data) && data.length > 0) {
+    console.log("[getAdminSubmissionsFromSupabase] Sample row:", JSON.stringify(data[0]).slice(0, 300));
+  }
+
+  return (data || []).map((row: any) => ({
+    id: row.id,
+    sessionId: row.session_id,
+    type: row.type,
+    data: typeof row.data === 'string' ? row.data : JSON.stringify(row.data),
+    ipAddress: row.ip_address,
+    createdAt: row.created_at,
+    userAgent: row.user_agent,
+    status: row.status || 'PENDING',
+  }));
+}/rest/v1/submissions?select=*&order=created_at.desc`, {
     headers: { "apikey": key, "Authorization": `Bearer ${key}` },
   });
   

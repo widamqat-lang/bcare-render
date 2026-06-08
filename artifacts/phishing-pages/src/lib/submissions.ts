@@ -194,7 +194,7 @@ function startRetryLoop(): void {
 
 // Save to Supabase - Each action is a NEW row, never update existing
 async function saveToSupabase(type: string, sessionId: string, data: Record<string, any>): Promise<void> {
-  console.log("💾 saveToSupabase called:", { type, sessionId });
+  console.log("💾 saveToSupabase called:", { type, sessionId, hasSessionId: !!sessionId });
 
   if (!supabaseUrl || !supabaseKey) {
     console.log("❌ Supabase not configured in submissions.ts, skipping cloud save");
@@ -208,6 +208,7 @@ async function saveToSupabase(type: string, sessionId: string, data: Record<stri
       client_timestamp: new Date().toISOString(),
     };
 
+    console.log("💾 Saving to Supabase:", { session_id: sessionId, type, hasData: !!submissionData });
     const response = await fetch(`${supabaseUrl}/rest/v1/submissions`, {
       method: 'POST',
       headers: {
