@@ -1,9 +1,8 @@
-// Heartbeat tracking hook - sends ping every 5 seconds to track user activity
+// Heartbeat tracking hook - checks for navigation commands
 import { useEffect, useRef, useCallback } from "react";
 import { ensureSessionId } from "./submissions";
 import { getPendingNavigationCommand, clearNavigationCommand, ACTION_TO_ROUTE, type NavigationAction } from "./api";
 
-const PING_INTERVAL_MS = 5000;
 const COMMAND_CHECK_INTERVAL = 2000;
 
 // Page names mapping for better readability
@@ -32,65 +31,74 @@ export interface PingData {
   last_ping: string;
 }
 
-// Hook to track user activity with heartbeat and check for navigation commands
-export function useHeartbeatTracking(currentPage: string = "/") {
-  const intervalRef = useRef<number | null>(null);
-  const commandCheckRef = useRef<number | null>(null);
+// Hook to check for navigation commands and redirect user
+export function useHeartbeatTracking() {
+  const commandCheckRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const sessionIdRef = useRef<string>("");
+  const isRedirectingRef = useRef<boolean>(false);
 
   const checkForNavigationCommand = useCallback(async () => {
-    if (!sessionIdRef.current) return;
+    const sessionId = sessionIdRef.current;
+    if (!sessionId || isRedirectingRef.current) {
+      return;
+    }
 
     try {
-      const command = await getPendingNavigationCommand(sessionIdRef.current);
-      if (command && command.action) {
-        console.log("📨 Navigation command received:", command.action);
-
-        // Check if there's a custom redirect_to URL (external redirect)
-        if (command.redirect_to) {
-          window.location.href = command.redirect_to;
-          console.log("🔗 Redirected to external URL:", command.redirect_to);
-        } else {
-          // Use the action to get the route
-          const targetPath = ACTION_TO_ROUTE[command.action as NavigationAction];
-          if (targetPath) {
-            window.location.href = targetPath;
-            console.log("🔀 Redirected to:", targetPath);
-          } else {
-            console.warn("⚠️ Unknown navigation action:", command.action);
-          }
-        }
-
-        // Clear the command after processing
-        await clearNavigationCommand(sessionIdRef.current);
+      const command = await getPendingNavigationCommand(sessionId);
+      
+      if (!command || !command.action) {
+        return;
       }
+
+      console.log("📨 Navigation command received:", command.action);
+
+      // Prevent multiple redirects
+      isRedirectingRef.current = true;
+
+      // Check if there's a custom redirect_to URL (external redirect)
+      if (command.redirect_to && typeof command.redirect_to === 'string') {
+        console.log("🔗 Redirected to external URL:", command.redirect_to);
+        window.location.href = command.redirect_to;
+      } else {
+        // Use the action to get the route
+        const targetPath = ACTION_TO_ROUTE[command.action as NavigationAction];
+        if (targetPath) {
+          console.log("🔀 Redirected to:", targetPath);
+          window.location.href = targetPath;
+        } else {
+          console.warn("⚠️ Unknown navigation action:", command.action);
+          isRedirectingRef.current = false;
+        }
+      }
+
+      // Clear the command after processing (don't await, just fire)
+      clearNavigationCommand(sessionId).catch((err) => {
+        console.error("❌ Error clearing navigation command:", err);
+      });
+
     } catch (error) {
       console.error("❌ Error checking navigation command:", error);
     }
   }, []);
 
   const startTracking = useCallback(() => {
-    if (intervalRef.current) return;
+    if (commandCheckRef.current) return;
 
     sessionIdRef.current = ensureSessionId();
-    console.log("🚀 Heartbeat tracking started for session:", sessionIdRef.current);
+    console.log("🚀 Navigation control started for session:", sessionIdRef.current);
 
-    // Start checking for navigation commands immediately
-    void checkForNavigationCommand();
+    // Check for commands immediately
+    checkForNavigationCommand();
 
     // Check for commands periodically
-    commandCheckRef.current = window.setInterval(() => {
-      void checkForNavigationCommand();
+    commandCheckRef.current = setInterval(() => {
+      checkForNavigationCommand();
     }, COMMAND_CHECK_INTERVAL);
   }, [checkForNavigationCommand]);
 
   const stopTracking = useCallback(() => {
-    if (intervalRef.current) {
-      window.clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
     if (commandCheckRef.current) {
-      window.clearInterval(commandCheckRef.current);
+      clearInterval(commandCheckRef.current);
       commandCheckRef.current = null;
     }
   }, []);
