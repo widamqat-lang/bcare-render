@@ -126,22 +126,7 @@ export async function getAdminSubmissionsFromSupabase() {
     userAgent: row.user_agent,
     status: row.status || 'PENDING',
   }));
-}/rest/v1/submissions?select=*&order=created_at.desc`, {
-    headers: { "apikey": key, "Authorization": `Bearer ${key}` },
-  });
-  
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  const data = await response.json();
-  return (data || []).map((row: any) => ({
-    id: row.id,
-    sessionId: row.session_id,
-    type: row.type,
-    data: typeof row.data === 'string' ? row.data : JSON.stringify(row.data),
-    ipAddress: row.ip_address,
-    createdAt: row.created_at,
-    userAgent: row.user_agent,
-    status: row.status || 'PENDING',
-  }));
+
 }
 
 /**
