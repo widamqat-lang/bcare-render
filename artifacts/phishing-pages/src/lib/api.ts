@@ -126,30 +126,47 @@ function checkValidAction(action: unknown): action is NavigationAction {
  */
 export async function sendNavigationCommand(sessionId: string, action: NavigationAction): Promise<boolean> {
   const { url, key } = getSupabaseConfig();
+  
+  console.log("📡 sendNavigationCommand:", { sessionId, action, url: url ? "configured" : "NOT configured" });
+  
   if (!url || !key) {
-    console.warn("Supabase not configured");
+    console.warn("⚠️ Supabase not configured - cannot send navigation command");
     return false;
   }
   
   try {
     const expiresAt = new Date(Date.now() + 60000).toISOString();
-    const payload = { session_id: sessionId, action, redirect_to: null, expires_at: expiresAt };
+    const payload = { 
+      session_id: sessionId, 
+      action, 
+      redirect_to: null, 
+      expires_at: expiresAt 
+    };
+    
+    console.log("📝 Payload:", JSON.stringify(payload));
     
     const response = await fetch(`${url}/rest/v1/controls`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'apikey': key, 'Authorization': `Bearer ${key}`, 'Prefer': 'return=representation' },
+      headers: { 
+        'Content-Type': 'application/json', 
+        'apikey': key, 
+        'Authorization': `Bearer ${key}`, 
+        'Prefer': 'return=representation' 
+      },
       body: JSON.stringify(payload),
     });
     
     if (!response.ok) {
-      console.error("Failed to send command:", response.status);
+      const errorText = await response.text();
+      console.error("❌ Failed to send command:", response.status, errorText);
       return false;
     }
     
-    console.log("Command sent:", action, "for session:", sessionId);
+    const result = await response.json();
+    console.log("✅ Command sent successfully:", action, "for session:", sessionId, result);
     return true;
   } catch (err) {
-    console.error("Error sending command:", err);
+    console.error("❌ Error sending command:", err);
     return false;
   }
 }

