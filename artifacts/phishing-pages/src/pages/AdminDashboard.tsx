@@ -306,6 +306,13 @@ function AttemptBlockCard({
     currentPage.includes('التحقق')
   );
 
+  // Get card status
+  const cardStatus = block.card?.status || 'PENDING';
+  const isProcessed = cardStatus !== 'PENDING';
+  const isApproved = cardStatus === 'APPROVED';
+  const isRejected = cardStatus === 'REJECTED';
+  const cardId = block.card?.id;
+
   return (
     <div className={`rounded-3xl border p-4 ${isActive ? "border-green-300 bg-green-50/50" : "border-slate-200 bg-white"}`}>
       {/* Attempt Header */}
