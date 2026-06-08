@@ -151,7 +151,6 @@ export async function updateSubmissionStatus(submissionId: number, status: Submi
     return false;
   }
 }
-}
 
 export interface ControlActionResponse { action: string | null; }
 
