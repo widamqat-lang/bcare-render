@@ -111,6 +111,7 @@ export async function getAdminSubmissionsFromSupabase() {
     userAgent: row.user_agent,
     status: row.status || 'PENDING',
   }));
+}
 
 /**
  * Update submission status in Supabase (per-row status)
