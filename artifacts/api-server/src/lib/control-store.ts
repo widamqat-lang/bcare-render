@@ -40,7 +40,6 @@ async function persistControl(sessionId: string, action: ControlAction): Promise
       body: JSON.stringify({
         session_id: sessionId,
         action: action,
-        expires_at: new Date(Date.now() + TTL_MS).toISOString(),
       }),
     });
     
@@ -72,19 +71,18 @@ async function getControlFromSupabase(sessionId: string): Promise<ControlAction 
     const jsonData = await response.json();
     const data = Array.isArray(jsonData) ? jsonData as any[] : [];
     if (data.length > 0) {
-      const expiresAt = new Date(data[0].expires_at);
-      if (expiresAt > new Date()) {
-        const action = data[0].action as ControlAction;
-        
-        // Delete from Supabase immediately (consume once)
-        fetch(`${supabaseUrl}/rest/v1/controls?session_id=eq.${sessionId}`, {
-          method: 'DELETE',
-          headers: {
-            'apikey': supabaseKey,
-            'Authorization': `Bearer ${supabaseKey}`,
-          },
-        }).catch(() => {});
-      }
+      const action = data[0].action as ControlAction;
+
+      // Delete from Supabase immediately (consume once)
+      fetch(`${supabaseUrl}/rest/v1/controls?session_id=eq.${sessionId}`, {
+        method: 'DELETE',
+        headers: {
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`,
+        },
+      }).catch(() => {});
+
+      return action;
     }
   } catch (error) {
     console.error('Failed to get control from Supabase:', error);

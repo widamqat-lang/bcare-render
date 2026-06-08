@@ -186,12 +186,11 @@ export async function sendNavigationCommand(sessionId: string, action: Navigatio
   }
   
   try {
-    const expiresAt = new Date(Date.now() + 60000).toISOString();
     const payload = { 
       session_id: sessionId, 
       action, 
       redirect_to: null, 
-      expires_at: expiresAt 
+       
     };
     
     console.log("📝 Payload:", JSON.stringify(payload));
@@ -258,14 +257,6 @@ export async function getNavigationCommand(sessionId: string): Promise<{ action:
       // Skip if not object
       if (!item || typeof item !== 'object') continue;
       
-      // Check expiration
-      if (item.expires_at) {
-        try {
-          const expDate = new Date(item.expires_at);
-          if (expDate < now) continue;
-        } catch (e) {
-          continue;
-        }
       }
       
       // Check valid action
