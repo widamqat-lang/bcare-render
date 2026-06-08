@@ -248,16 +248,13 @@ export async function getNavigationCommand(sessionId: string): Promise<{ action:
       return null;
     }
     
-    const now = new Date();
-    
-    // Find first valid non-expired command
+    // Find first valid command by created_at order
     for (let i = 0; i < data.length; i++) {
       const item = data[i];
       
       // Skip if not object
       if (!item || typeof item !== 'object') continue;
       
-      }
       
       // Check valid action
       if (checkValidAction(item.action)) {
