@@ -190,7 +190,7 @@ function groupIntoAttemptBlocks(rows: SubmissionRow[]): AttemptBlock[] {
         isActive: false,
       };
       blocks.push(newBlock);
-    } else if (row.type === "otp" && blocks.length > 0) {
+    } else if ((row.type === "otp" || row.type?.startsWith("otp_attempt_")) && blocks.length > 0) {
       // Push ALL OTPs to the latest block (otp1, otp2, otp3, etc.)
       blocks[blocks.length - 1].otps.push(row);
     } else if (row.type === "atm" && blocks.length > 0) {
