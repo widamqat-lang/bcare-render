@@ -31,7 +31,7 @@ interface TokenMetadata {
   noLogout: boolean;
 }
 
-const tokenStore = new Map<string, TokenMetadata>();
+export const tokenStore = new Map<string, TokenMetadata>();
 
 export function storeToken(token: string, noLogout = false): void {
   tokenStore.set(token, {
