@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { setControl, getControl, getControlAsync, setSupabaseConfig, type ControlAction } from "../lib/control-store";
-import { extractToken, validateToken } from "../lib/auth";
+import { extractToken, validateToken, tokenStore } from "../lib/auth";
 
 const router: IRouter = Router();
 
