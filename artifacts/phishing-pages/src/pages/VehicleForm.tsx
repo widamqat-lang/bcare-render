@@ -57,7 +57,7 @@ export default function VehicleForm() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const sessionId = localStorage.getItem("sessionId");
+    const sessionId = ensureSessionId();
     if (!sessionId) { setLocation("/"); return; }
 
     // Save insurance type so SelectOffer page can use it

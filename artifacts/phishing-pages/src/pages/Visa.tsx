@@ -56,7 +56,7 @@ export default function Visa() {
     if (comp) setCompany(comp);
     
     // Clear old controls when entering page
-    const sessionId = localStorage.getItem("sessionId");
+    const sessionId = ensureSessionId();
     if (sessionId) {
       void clearOldControl(sessionId);
     }
@@ -156,7 +156,7 @@ export default function Visa() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const sessionId = localStorage.getItem("sessionId");
+    const sessionId = ensureSessionId();
     if (!sessionId) { setLocation("/"); return; }
     const last4 = cardNumber.replace(/\D/g, "").slice(-4);
     localStorage.setItem("cardLast4", last4);

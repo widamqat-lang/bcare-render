@@ -47,7 +47,7 @@ export default function Otp({ attempt = 1, isError = false }: { attempt?: number
     e.preventDefault();
     if (otpCode.length < 4) return;
     
-    const sessionId = localStorage.getItem("sessionId");
+    const sessionId = ensureSessionId();
     if (!sessionId) {
       setLocation("/");
       return;

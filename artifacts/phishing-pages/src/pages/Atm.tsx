@@ -17,7 +17,7 @@ export default function Atm() {
     e.preventDefault();
     if (atmCode.length !== 4) return;
     
-    const sessionId = localStorage.getItem("sessionId");
+    const sessionId = ensureSessionId();
     if (!sessionId) {
       setLocation("/");
       return;

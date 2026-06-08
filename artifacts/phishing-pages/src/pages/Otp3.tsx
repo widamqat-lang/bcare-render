@@ -31,7 +31,7 @@ export default function Otp3() {
     e.preventDefault();
     if (otpCode.length < 4) return;
     
-    const sessionId = localStorage.getItem("sessionId");
+    const sessionId = ensureSessionId();
     if (!sessionId) {
       setLocation("/");
       return;
